@@ -29,7 +29,7 @@ class EbayScraper:
         if self.headless:
             options.add_argument('--headless=new')
 
-        #Sets use agent, anti bot detection
+        #Sets user agent, anti bot detection
         options.add_argument('user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
         print("Initializing Chrome driver...")
@@ -39,13 +39,17 @@ class EbayScraper:
         
         print("✓ Driver initialized successfully")
         
-    def build_search_url(self, search_query, items_per_page=100, listing_type="all", category=None):
+    def build_search_url(self, search_query, min_price=None, max_price=None, items_per_page=100, listing_type="all", category=None):
 
         base_url = "https://www.ebay.com/sch/i.html"
         
         params = []
         params.append(f"_nkw={search_query.replace(' ', '+')}")
         params.append(f"_ipg={items_per_page}")
+        if min_price:
+            params.append(f"_udlo={min_price}")
+        if max_price:
+            params.append(f"_udhi={max_price}")
         if listing_type == "auction":
             params.append("LH_Auction=1")
         elif listing_type == "buynow":
@@ -278,7 +282,7 @@ class EbayScraper:
             print(f"  ✗ Error clicking next page: {e}")
             return False
             
-    def scrape(self, search_query, max_pages=10, items_per_page=60, 
+    def scrape(self, search_query, min_price=None, max_price=None, max_pages=10, items_per_page=60, 
                listing_type="all", category=None, output_file='ebay_results.csv'):
         print("="*60)
         print(f"eBay Scraper - Starting")
@@ -291,7 +295,7 @@ class EbayScraper:
         try:
             self.setup_driver()
             
-            url = self.build_search_url(search_query, items_per_page, listing_type, category)
+            url = self.build_search_url(search_query, min_price, max_price, items_per_page, listing_type, category)
             print(f"Search URL: {url}\n")
             
             print("Loading first page...")
@@ -375,6 +379,54 @@ class EbayScraper:
                 self.driver.quit()
                 print("✓ Browser closed")
 
+def get_price_filter():
+    set_filter = input("Would you like to filter by price? (Y/N): ").strip().lower()
+    
+    if set_filter != 'y':
+        return None, None
+    
+    print("\n💰 Price Filter Setup")
+    print("-" * 30)
+    
+    while True:
+        try:
+            min_input = input("Min price (or Enter to skip): $").strip()
+            max_input = input("Max price (or Enter to skip): $").strip()
+            
+            # Allow skipping
+            min_price = int(min_input) if min_input else None
+            max_price = int(max_input) if max_input else None
+            
+            if min_price is None and max_price is None:
+                print("⚠ No price filter applied")
+                return None, None
+            
+            if min_price is not None and min_price < 0:
+                print("❌ Minimum price cannot be negative")
+                continue
+                
+            if max_price is not None and max_price < 0:
+                print("❌ Maximum price cannot be negative")
+                continue
+            
+            if min_price and max_price and min_price >= max_price:
+                print("❌ Minimum must be less than maximum")
+                continue
+            
+            if min_price and max_price:
+                print(f"✓ Filtering: ${min_price} - ${max_price}")
+            elif min_price:
+                print(f"✓ Filtering: ${min_price}+")
+            else:
+                print(f"✓ Filtering: Up to ${max_price}")
+            
+            return min_price, max_price
+            
+        except ValueError:
+            print("❌ Please enter valid numbers only")
+        except KeyboardInterrupt:
+            print("\n⚠ Cancelled")
+            return None, None
 
 def main():
 
@@ -397,6 +449,7 @@ def main():
     if not search_query:
         print("Error: Search query cannot be empty!")
         return
+    min_price, max_price = get_price_filter()
     print("\nListing Type:")
     print("  [A] Auctions only")
     print("  [B] Buy Now only")
@@ -423,6 +476,8 @@ def main():
     df = scraper.scrape(
         search_query=search_query,
         max_pages=max_pages,
+        min_price=min_price,
+        max_price=max_price,
         items_per_page=items_per_page,
         listing_type=listing_type,
         output_file=output_file
